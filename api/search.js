@@ -5,7 +5,17 @@ export default async function handler(req, res) {
     if (req.method === 'OPTIONS') { res.status(204).end(); return; }
 
     try {
-        const { query } = req.body;
+        const body = await new Promise((resolve, reject) => {
+            let data = '';
+            req.on('data', chunk => data += chunk);
+            req.on('end', () => {
+                try { resolve(JSON.parse(data)); }
+                catch (e) { reject(e); }
+            });
+            req.on('error', reject);
+        });
+
+        const { query } = body;
         const googleKey = process.env.GOOGLE_API_KEY;
         const googleCx  = process.env.GOOGLE_CX;
 
