@@ -5,9 +5,18 @@ export default async function handler(req, res) {
     if (req.method === 'OPTIONS') { res.status(204).end(); return; }
 
     try {
-        const { prompt } = req.body;
+        const body = await new Promise((resolve, reject) => {
+            let data = '';
+            req.on('data', chunk => data += chunk);
+            req.on('end', () => {
+                try { resolve(JSON.parse(data)); }
+                catch (e) { reject(e); }
+            });
+            req.on('error', reject);
+        });
 
-        // Coba FLUX dulu
+        const { prompt } = body;
+
         let hfRes = await fetch('https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell', {
             method: 'POST',
             headers: {
@@ -17,7 +26,6 @@ export default async function handler(req, res) {
             body: JSON.stringify({ inputs: prompt })
         });
 
-        // Fallback ke SDXL kalau FLUX 503
         if (hfRes.status === 503) {
             hfRes = await fetch('https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0', {
                 method: 'POST',
@@ -34,7 +42,6 @@ export default async function handler(req, res) {
             return;
         }
 
-        // Kirim balik sebagai base64
         const arrayBuffer = await hfRes.arrayBuffer();
         const base64 = Buffer.from(arrayBuffer).toString('base64');
         const mime = hfRes.headers.get('content-type') || 'image/jpeg';
@@ -43,4 +50,4 @@ export default async function handler(req, res) {
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
-    }
+}
