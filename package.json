@@ -2,5 +2,5 @@
   "name": "hidakaai",
   "version": "1.0.0",
   "description": "HidakaAI - Powered by Groq",
-  "engines": { "node": "18" }
+  "engines": { "node": "24.x" }
 }
