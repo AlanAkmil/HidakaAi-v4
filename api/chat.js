@@ -5,7 +5,18 @@ export default async function handler(req, res) {
     if (req.method === 'OPTIONS') { res.status(204).end(); return; }
 
     try {
-        const { messages, superMode } = req.body;
+        // Parse body manual
+        const body = await new Promise((resolve, reject) => {
+            let data = '';
+            req.on('data', chunk => data += chunk);
+            req.on('end', () => {
+                try { resolve(JSON.parse(data)); }
+                catch (e) { reject(e); }
+            });
+            req.on('error', reject);
+        });
+
+        const { messages, superMode } = body;
 
         const GROQ_MODELS = [
             'llama-3.3-70b-versatile',
