@@ -5,7 +5,17 @@ export default async function handler(req, res) {
     if (req.method === 'OPTIONS') { res.status(204).end(); return; }
 
     try {
-        const { imageBase64, mimeType, msg } = req.body;
+        const body = await new Promise((resolve, reject) => {
+            let data = '';
+            req.on('data', chunk => data += chunk);
+            req.on('end', () => {
+                try { resolve(JSON.parse(data)); }
+                catch (e) { reject(e); }
+            });
+            req.on('error', reject);
+        });
+
+        const { imageBase64, mimeType, msg } = body;
 
         const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
             method: 'POST',
@@ -20,7 +30,7 @@ export default async function handler(req, res) {
                     content: [
                         {
                             type: 'text',
-                            text: msg || 'Analisis gambar ini secara detail. Berikan deskripsi lengkap tentang apa yang kamu lihat, termasuk objek, warna, komposisi, dan deteksi konten NSFW jika ada.'
+                            text: msg || 'Analisis gambar ini secara detail.'
                         },
                         {
                             type: 'image_url',
