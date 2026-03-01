@@ -44,11 +44,7 @@
                 radial-gradient(ellipse 45% 45% at 90% 85%, rgba(109,40,217,0.10) 0%, transparent 55%),
                 var(--bg);
         }
-        .bg-img {
-            position:fixed; inset:0; z-index:0;
-            background: url('https://image2url.com/r2/default/images/1771687049647-12563e95-06ec-486c-905c-ff2fbbe05e31.png') center/cover no-repeat;
-            opacity: 0.07;
-        }
+        /* bg-img removed for perf */
         .bg-grid {
             position:fixed; inset:0; z-index:0;
             background-image:
@@ -88,7 +84,7 @@
         }
         @keyframes neon-pulse-anim {
             0%,100% { box-shadow: 0 0 20px #9333ea, 0 0 40px #9333ea, 0 0 60px #9333ea, inset 0 0 20px rgba(147,51,234,0.2); }
-            50%     { box-shadow: 0 0 30px #9333ea, 0 0 55px #9333ea, 0 0 80px #9333ea, inset 0 0 30px rgba(147,51,234,0.3); }
+            50%     { box-shadow: 0 0 22px #9333ea, 0 0 38px #9333ea, inset 0 0 18px rgba(147,51,234,0.2); }
         }
 
         /* APP LAYOUT */
@@ -539,6 +535,55 @@
         .notif.info i { color:var(--purple-light); }
         .notif.warning i { color:#facc15; }
 
+
+        /* ===== CONTEXT MENU SALIN / EDIT ===== */
+        .ctx-menu {
+            position: fixed;
+            background: rgba(10,6,22,0.98);
+            border: 1px solid var(--border-bright);
+            border-radius: 12px;
+            padding: 6px;
+            z-index: 999999;
+            display: none;
+            box-shadow: 0 16px 40px rgba(0,0,0,0.75), 0 0 20px rgba(147,51,234,0.25);
+            animation: dropIn 0.15s ease;
+            min-width: 160px;
+        }
+        .ctx-menu.show { display: block; }
+        .ctx-item {
+            display: flex; align-items: center; gap: 10px;
+            padding: 9px 13px; border-radius: 9px;
+            cursor: pointer; color: var(--text2);
+            font-size: 0.85rem; font-weight: 500;
+            transition: all 0.15s; border: none;
+            background: none; width: 100%; text-align: left;
+            font-family: inherit;
+        }
+        .ctx-item:hover { background: var(--purple-soft); color: var(--purple-light); }
+        .ctx-item i { width: 15px; text-align: center; color: var(--purple); font-size: 0.85rem; }
+        .ctx-sep { height: 1px; background: var(--border); margin: 4px 7px; }
+
+        /* Edit mode bubble */
+        .msg-bubble.editing {
+            outline: 2px solid var(--purple);
+            box-shadow: 0 0 14px rgba(147,51,234,0.3);
+        }
+        .edit-actions {
+            display: flex; gap: 7px; margin-top: 9px;
+        }
+        .edit-btn {
+            padding: 5px 13px; border-radius: 7px; border: none;
+            font-size: 0.79rem; font-weight: 700; cursor: pointer;
+            font-family: inherit; transition: all 0.2s;
+        }
+        .edit-btn.save { background: var(--purple); color: white; }
+        .edit-btn.save:hover { background: var(--purple-dark); }
+        .edit-btn.cancel {
+            background: transparent; border: 1px solid var(--border);
+            color: var(--text2);
+        }
+        .edit-btn.cancel:hover { border-color: var(--purple); color: var(--purple-light); }
+
         @media(max-width:600px){
             .logo-text { font-size:1rem; }
             .welcome h1 { font-size:1.55rem; }
@@ -551,7 +596,12 @@
 <body>
 
 <div class="bg-layer"></div>
-<div class="bg-img"></div>
+<!-- CONTEXT MENU -->
+<div class="ctx-menu" id="ctx-menu">
+    <button class="ctx-item" id="ctx-copy"><i class="fas fa-copy"></i> Salin Pesan</button>
+    <div class="ctx-sep" id="ctx-edit-sep" style="display:none"></div>
+    <button class="ctx-item" id="ctx-edit" style="display:none"><i class="fas fa-pen"></i> Edit Pesan</button>
+</div>
 <div class="bg-grid"></div>
 
 <!-- SIDEBAR OVERLAY -->
@@ -636,8 +686,8 @@
 
         <!-- Typing indicator always at bottom -->
         <div class="typing-row" id="typing-row">
-            <div class="msg-avatar ai" style="background:transparent;border:none;padding:0">
-                <canvas id="typing-avatar" width="34" height="34" style="border-radius:50%;display:block;filter:drop-shadow(0 0 7px rgba(147,51,234,0.9));"></canvas>
+            <div class="msg-avatar ai">
+                <i class="fas fa-robot" style="color:var(--purple-light);font-size:0.85rem"></i>
             </div>
             <div class="typing-dots">
                 <div class="dot"></div><div class="dot"></div><div class="dot"></div>
@@ -854,7 +904,7 @@ function initParticleLogo(canvas, size, count) {
 initParticleLogo(document.getElementById('logo-canvas'), 40, 20);
 initParticleLogo(document.getElementById('welcome-canvas'), 88, 50);
 // Typing indicator avatar
-setTimeout(()=>{ const c=document.getElementById('typing-avatar'); if(c) initParticleLogo(c,34,14); },100);
+// typing avatar simplified for performance
 
 // ============================
 // MAIN APP - GROQ VERSION (STABIL)
@@ -874,6 +924,7 @@ class HidakaAI {
 
         this.loadSessions();
         this.bindEvents();
+        this.initContextMenu();
     }
 
     // ---- SESSIONS ----
@@ -1273,9 +1324,8 @@ class HidakaAI {
         const typingRow=document.getElementById('typing-row');
         const div=document.createElement('div');
         div.className='message';
-        const cid='av_'+Date.now();
         div.innerHTML=`
-            <div class="msg-avatar ai" style="background:transparent;border:none;padding:0"><canvas id="${cid}" width="34" height="34" style="border-radius:50%;display:block;filter:drop-shadow(0 0 7px rgba(147,51,234,0.9));"></canvas></div>
+            <div class="msg-avatar ai"><i class="fas fa-robot" style="color:var(--purple-light);font-size:0.85rem"></i></div>
             <div class="msg-body">
                 <div class="msg-bubble ai-bubble">
                     <p style="margin-bottom:9px">🎨 Gambar berhasil dibuat!</p>
@@ -1285,7 +1335,6 @@ class HidakaAI {
                 <div class="msg-time">${this.fmtTime()}</div>
             </div>`;
         area.insertBefore(div,typingRow);
-        setTimeout(()=>{ const c=document.getElementById(cid); if(c) initParticleLogo(c,34,14); },50);
         this.scrollBottom();
         document.getElementById('welcome').classList.add('hidden');
     }
@@ -1300,9 +1349,7 @@ class HidakaAI {
         if(sender==='user'){
             avatar='<div class="msg-avatar user"><i class="fas fa-user"></i></div>';
         } else {
-            const cid='av_'+Date.now()+'_'+Math.random().toString(36).slice(2,7);
-            avatar=`<div class="msg-avatar ai" style="background:transparent;border:none;padding:0"><canvas id="${cid}" width="34" height="34" style="border-radius:50%;display:block;filter:drop-shadow(0 0 7px rgba(147,51,234,0.9));"></canvas></div>`;
-            setTimeout(()=>{ const c=document.getElementById(cid); if(c) initParticleLogo(c,34,14); },50);
+            avatar='<div class="msg-avatar ai"><i class="fas fa-robot" style="color:var(--purple-light);font-size:0.85rem"></i></div>';
         }
 
         const bubbleClass=sender==='user'?'user-bubble':'ai-bubble';
@@ -1398,6 +1445,178 @@ class HidakaAI {
         a.href=URL.createObjectURL(new Blob([txt],{type:'text/plain'}));
         a.download=`hidakaai-${Date.now()}.txt`; a.click();
         this.notify('Chat berhasil diekspor','success');
+    }
+
+    // ---- CONTEXT MENU (double tap / double click) ----
+    initContextMenu() {
+        const menu = document.getElementById('ctx-menu');
+        const copyBtn = document.getElementById('ctx-copy');
+        const editBtn = document.getElementById('ctx-edit');
+        const editSep = document.getElementById('ctx-edit-sep');
+        let targetBubble = null;
+        let targetMsgEl = null;
+        let targetRawText = '';
+
+        const openMenu = (x, y, bubble, msgEl, isUser) => {
+            targetBubble = bubble;
+            targetMsgEl = msgEl;
+            targetRawText = bubble.innerText || bubble.textContent || '';
+
+            // Tampilkan edit hanya untuk pesan user
+            editBtn.style.display = isUser ? 'flex' : 'none';
+            editSep.style.display = isUser ? 'block' : 'none';
+
+            menu.classList.add('show');
+            // Posisi aman dalam layar
+            const mw = 170, mh = isUser ? 110 : 56;
+            const vw = window.innerWidth, vh = window.innerHeight;
+            let mx = x, my = y;
+            if(mx + mw > vw - 6) mx = vw - mw - 6;
+            if(my + mh > vh - 6) my = vh - mh - 6;
+            if(mx < 6) mx = 6;
+            menu.style.left = mx + 'px';
+            menu.style.top = my + 'px';
+        };
+
+        // Tutup saat klik/tap di luar
+        document.addEventListener('click', e => {
+            if(!menu.contains(e.target)) menu.classList.remove('show');
+        });
+
+        // --- DOUBLE TAP (HP) ---
+        const chatArea = document.getElementById('chat-area');
+        let lastTap = 0, lastTarget = null;
+        chatArea.addEventListener('touchend', e => {
+            const bubble = e.target.closest('.msg-bubble');
+            if(!bubble) return;
+            const now = Date.now();
+            if(now - lastTap < 320 && lastTarget === bubble) {
+                e.preventDefault();
+                const msgEl = bubble.closest('.message');
+                const isUser = msgEl && msgEl.classList.contains('user-msg');
+                const t = e.changedTouches[0];
+                openMenu(t.clientX, t.clientY, bubble, msgEl, isUser);
+            }
+            lastTap = now;
+            lastTarget = bubble;
+        }, { passive: false });
+
+        // --- DOUBLE CLICK (desktop) ---
+        chatArea.addEventListener('dblclick', e => {
+            const bubble = e.target.closest('.msg-bubble');
+            if(!bubble) return;
+            const msgEl = bubble.closest('.message');
+            const isUser = msgEl && msgEl.classList.contains('user-msg');
+            openMenu(e.clientX, e.clientY, bubble, msgEl, isUser);
+        });
+
+        // --- SALIN ---
+        copyBtn.addEventListener('click', () => {
+            menu.classList.remove('show');
+            const text = targetRawText.trim();
+            if(!text) return;
+            if(navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text)
+                    .then(() => this.notify('✓ Disalin!', 'success'))
+                    .catch(() => this._fallbackCopy(text));
+            } else {
+                this._fallbackCopy(text);
+            }
+        });
+
+        // --- EDIT ---
+        editBtn.addEventListener('click', () => {
+            menu.classList.remove('show');
+            if(targetBubble && targetMsgEl) this.startEdit(targetBubble, targetMsgEl, targetRawText);
+        });
+    }
+
+    _fallbackCopy(text) {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.cssText = 'position:fixed;opacity:0;top:0;left:0';
+        document.body.appendChild(ta);
+        ta.focus(); ta.select();
+        try { document.execCommand('copy'); this.notify('✓ Disalin!', 'success'); }
+        catch { this.notify('Gagal salin', 'error'); }
+        ta.remove();
+    }
+
+    startEdit(bubble, msgEl, rawText) {
+        // Hapus gambar dari raw text kalau ada
+        const cleanText = rawText.replace(/^\[Generated:.*\]$/m,'').trim();
+
+        bubble.classList.add('editing');
+        const savedHTML = bubble.innerHTML;
+
+        bubble.innerHTML = `
+            <div contenteditable="true" id="edit-field" style="
+                outline:none; min-height:20px; word-break:break-word;
+                white-space:pre-wrap; color:white; font-size:0.9rem; line-height:1.65;
+            ">${this.escHtml(cleanText)}</div>
+            <div class="edit-actions">
+                <button class="edit-btn save" id="edit-save"><i class="fas fa-paper-plane"></i> Kirim</button>
+                <button class="edit-btn cancel" id="edit-cancel"><i class="fas fa-times"></i> Batal</button>
+            </div>`;
+
+        const field = document.getElementById('edit-field');
+        const saveBtn = document.getElementById('edit-save');
+        const cancelBtn = document.getElementById('edit-cancel');
+
+        // Fokus, cursor ke akhir
+        field.focus();
+        const range = document.createRange();
+        range.selectNodeContents(field);
+        range.collapse(false);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+
+        cancelBtn.onclick = () => {
+            bubble.classList.remove('editing');
+            bubble.innerHTML = savedHTML;
+        };
+
+        const doSend = () => {
+            const newText = field.innerText.trim();
+            if(!newText) return;
+            bubble.classList.remove('editing');
+
+            // Cari index pesan ini di session
+            const sess = this.currentSession;
+            const allMsgEls = Array.from(document.getElementById('chat-area').querySelectorAll('.message'));
+            const msgIdx = allMsgEls.indexOf(msgEl);
+
+            // Hapus dari DOM: pesan ini + semua sesudahnya
+            allMsgEls.slice(msgIdx).forEach(m => m.remove());
+
+            // Hitung berapa pesan user sebelum ini
+            const usersBefore = allMsgEls.slice(0, msgIdx)
+                .filter(m => m.classList.contains('user-msg')).length;
+
+            // Potong session.messages dari pesan user ke-usersBefore
+            if(sess) {
+                let uCount = 0, cutAt = sess.messages.length;
+                for(let i = 0; i < sess.messages.length; i++) {
+                    if(sess.messages[i].sender === 'user') {
+                        if(uCount === usersBefore) { cutAt = i; break; }
+                        uCount++;
+                    }
+                }
+                sess.messages = sess.messages.slice(0, cutAt);
+                this.saveSessions();
+            }
+
+            // Kirim ulang dengan teks baru
+            document.getElementById('user-input').value = newText;
+            this.handleSend();
+        };
+
+        saveBtn.onclick = doSend;
+        field.addEventListener('keydown', e => {
+            if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); doSend(); }
+            if(e.key === 'Escape') cancelBtn.click();
+        });
     }
 
     clearChat() {
