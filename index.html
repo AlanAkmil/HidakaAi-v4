@@ -278,7 +278,7 @@
         /* CHAT AREA */
         .chat-area {
             flex:1; overflow-y:auto;
-            padding: 20px 18px 120px;
+            padding: 20px 18px 20px;
             display:flex; flex-direction:column; gap:18px;
             scroll-behavior: smooth;
         }
@@ -413,7 +413,7 @@
             display:none; align-items:center; gap:11px;
             background:var(--surface2); border:1px solid var(--border);
             border-radius:12px; padding:10px 14px;
-            margin: 0 18px 8px; animation:msgIn 0.3s ease;
+            margin-bottom: 8px; animation:msgIn 0.3s ease;
         }
         .file-preview.show { display:flex; }
         .preview-img { width:46px; height:46px; border-radius:8px; object-fit:cover; }
@@ -698,21 +698,20 @@
         </div>
     </div>
 
-    <!-- FILE PREVIEW -->
-    <div class="file-preview" id="file-preview">
-        <img class="preview-img" id="preview-img" src="" alt="">
-        <div style="flex:1">
-            <div id="preview-name" style="font-size:0.85rem;color:var(--text);font-weight:500"></div>
-            <div id="preview-size" style="font-size:0.72rem;color:var(--text3);margin-top:2px"></div>
-        </div>
-        <button class="remove-file-btn" id="remove-file-btn"><i class="fas fa-times"></i></button>
-    </div>
-
     <!-- HIDDEN INPUTS -->
     <input type="file" id="file-upload" accept="image/*,.pdf,.txt,.md" style="display:none">
 
     <!-- INPUT AREA -->
     <div class="input-area">
+        <!-- FILE PREVIEW -->
+        <div class="file-preview" id="file-preview">
+            <img class="preview-img" id="preview-img" src="" alt="">
+            <div style="flex:1">
+                <div id="preview-name" style="font-size:0.85rem;color:var(--text);font-weight:500"></div>
+                <div id="preview-size" style="font-size:0.72rem;color:var(--text3);margin-top:2px"></div>
+            </div>
+            <button class="remove-file-btn" id="remove-file-btn"><i class="fas fa-times"></i></button>
+        </div>
         <!-- Tool chips row -->
         <div class="tools-row">
             <button class="tool-chip" id="chip-upload" title="Upload gambar/file">
