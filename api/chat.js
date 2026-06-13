@@ -1,59 +1,119 @@
+/**
+ * @project    : HidakaAI - Chat Endpoint (DeepSeek V4 Flash, no API key)
+ * @desc       : Proxy chat ke chat-deep.ai (deepseek-v4-flash), parse SSE -> text
+ * @route      : POST /api/chat
+ * @body       : { "messages": [{role, content}, ...], "superMode": boolean }
+ * @response   : { "content": "..." }  atau  { "error": "..." }
+ */
+
+const CONFIG = {
+    hostname: 'chat-deep.ai',
+    path: '/wp-json/dsc/v1/chat',
+    wpNonce: '35ee29a958',
+    model: 'deepseek-v4-flash',
+    origin: 'https://chat-deep.ai',
+    referer: 'https://chat-deep.ai/',
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36'
+};
+
 export default async function handler(req, res) {
+    // CORS
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-    if (req.method === 'OPTIONS') { res.status(204).end(); return; }
+
+    if (req.method === 'OPTIONS') return res.status(200).end();
+    if (req.method !== 'POST') {
+        return res.status(405).json({ error: 'Method not allowed' });
+    }
+
+    const { messages, superMode = false } = req.body || {};
+
+    if (!Array.isArray(messages) || messages.length === 0) {
+        return res.status(400).json({ error: 'Messages kosong atau tidak valid' });
+    }
 
     try {
-        // Parse body manual
-        const body = await new Promise((resolve, reject) => {
-            let data = '';
-            req.on('data', chunk => data += chunk);
-            req.on('end', () => {
-                try { resolve(JSON.parse(data)); }
-                catch (e) { reject(e); }
-            });
-            req.on('error', reject);
-        });
+        // Coba dengan session baru
+        let result = await chatOnce(messages, generateSessionId(), superMode);
 
-        const { messages, superMode } = body;
-
-        const GROQ_MODELS = [
-            'llama-3.3-70b-versatile',
-            'llama-3.1-70b-versatile',
-            'mixtral-8x7b-32768'
-        ];
-
-        let lastError = null;
-        for (const model of GROQ_MODELS) {
-            try {
-                const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': 'Bearer ' + process.env.GROQ_API_KEY,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        model,
-                        messages,
-                        temperature: 0.75,
-                        max_tokens: superMode ? 4000 : 2000
-                    })
-                });
-
-                const data = await groqRes.json();
-                if (!groqRes.ok) { lastError = data.error?.message; continue; }
-
-                const content = data.choices?.[0]?.message?.content;
-                if (!content) { lastError = 'Respons kosong'; continue; }
-
-                res.status(200).json({ content });
-                return;
-            } catch (e) { lastError = e.message; }
+        // Kalau quota habis, retry sekali dengan session baru
+        if (result.quotaRemaining !== null && result.quotaRemaining <= 0) {
+            result = await chatOnce(messages, generateSessionId(), superMode);
         }
 
-        res.status(500).json({ error: lastError || 'Semua model gagal' });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
+        if (!result.answer) {
+            return res.status(502).json({ error: 'Tidak ada respons dari model' });
+        }
+
+        return res.status(200).json({ content: result.answer });
+    } catch (err) {
+        console.error('Chat error:', err);
+        return res.status(500).json({ error: err.message || 'Chat gagal' });
     }
+}
+
+function generateSessionId() {
+    return crypto.randomUUID();
+}
+
+async function chatOnce(messages, sessionId, superMode) {
+    // Thinking mode: matikan biar cepat, kecuali Super Mode (boleh lebih dalam)
+    const payload = JSON.stringify({
+        messages,
+        model: CONFIG.model,
+        thinking: !!superMode,
+        session_id: sessionId
+    });
+
+    const response = await fetch(`https://${CONFIG.hostname}${CONFIG.path}`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'text/event-stream',
+            'X-WP-Nonce': CONFIG.wpNonce,
+            'Origin': CONFIG.origin,
+            'Referer': CONFIG.referer,
+            'User-Agent': CONFIG.userAgent
+        },
+        body: payload
+    });
+
+    if (!response.ok) {
+        throw new Error(`chat-deep.ai merespons status ${response.status}`);
+    }
+
+    const raw = await response.text();
+    return parseSSE(raw);
+}
+
+function parseSSE(raw) {
+    let fullContent = '';
+    let quotaRemaining = null;
+
+    const lines = raw.split('\n');
+    for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+
+        const jsonStr = line.substring(6).trim();
+        if (!jsonStr || jsonStr === '[DONE]') continue;
+
+        try {
+            const parsed = JSON.parse(jsonStr);
+            const delta = parsed.choices?.[0]?.delta;
+            if (delta?.content) {
+                fullContent += delta.content;
+            }
+            if (parsed.quota !== undefined) {
+                quotaRemaining = parsed.quota;
+            }
+        } catch {
+            // skip baris yang gagal di-parse
+        }
+    }
+
+    return {
+        answer: fullContent.trim(),
+        quotaRemaining
+    };
 }
