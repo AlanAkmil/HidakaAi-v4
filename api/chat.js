@@ -1,20 +1,23 @@
 /**
- * @project    : HidakaAI - Chat Endpoint (DeepSeek V4 Flash, no API key)
- * @desc       : Proxy chat ke chat-deep.ai (deepseek-v4-flash), parse SSE -> text
+ * @project    : HidakaAI - Chat Endpoint (Groq API)
+ * @desc       : Proxy chat ke Groq (llama-3.3-70b / gpt-oss-120b untuk Super Mode)
  * @route      : POST /api/chat
  * @body       : { "messages": [{role, content}, ...], "superMode": boolean }
  * @response   : { "content": "..." }  atau  { "error": "..." }
+ *
+ * SETUP:
+ * 1. Daftar gratis di https://console.groq.com -> buat API key
+ * 2. Di Vercel: Project Settings -> Environment Variables
+ *    Tambahkan: GROQ_API_KEY = gsk_xxxxxxxxxxxxxxxx
+ * 3. Redeploy project
  */
 
-const CONFIG = {
-    hostname: 'chat-deep.ai',
-    path: '/wp-json/dsc/v1/chat',
-    wpNonce: '35ee29a958',
-    model: 'deepseek-v4-flash',
-    origin: 'https://chat-deep.ai',
-    referer: 'https://chat-deep.ai/',
-    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36'
-};
+const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
+
+// Model normal: cepat, cocok untuk chat & RP
+const MODEL_NORMAL = 'llama-3.3-70b-versatile';
+// Model Super Mode: reasoning lebih kuat, untuk respons super detail
+const MODEL_SUPER = 'openai/gpt-oss-120b';
 
 export default async function handler(req, res) {
     // CORS
@@ -27,93 +30,51 @@ export default async function handler(req, res) {
         return res.status(405).json({ error: 'Method not allowed' });
     }
 
+    const apiKey = process.env.GROQ_API_KEY;
+    if (!apiKey) {
+        return res.status(500).json({ error: 'GROQ_API_KEY belum diset di Environment Variables Vercel' });
+    }
+
     const { messages, superMode = false } = req.body || {};
 
     if (!Array.isArray(messages) || messages.length === 0) {
         return res.status(400).json({ error: 'Messages kosong atau tidak valid' });
     }
 
-    try {
-        // Coba dengan session baru
-        let result = await chatOnce(messages, generateSessionId(), superMode);
+    const model = superMode ? MODEL_SUPER : MODEL_NORMAL;
 
-        // Kalau quota habis, retry sekali dengan session baru
-        if (result.quotaRemaining !== null && result.quotaRemaining <= 0) {
-            result = await chatOnce(messages, generateSessionId(), superMode);
+    try {
+        const response = await fetch(GROQ_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`
+            },
+            body: JSON.stringify({
+                model,
+                messages,
+                temperature: 0.8,
+                max_tokens: superMode ? 8000 : 2000,
+                top_p: 1,
+                stream: false
+            })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            const errMsg = data?.error?.message || `Groq merespons status ${response.status}`;
+            return res.status(response.status).json({ error: errMsg });
         }
 
-        if (!result.answer) {
+        const content = data?.choices?.[0]?.message?.content;
+        if (!content) {
             return res.status(502).json({ error: 'Tidak ada respons dari model' });
         }
 
-        return res.status(200).json({ content: result.answer });
+        return res.status(200).json({ content });
     } catch (err) {
         console.error('Chat error:', err);
         return res.status(500).json({ error: err.message || 'Chat gagal' });
     }
-}
-
-function generateSessionId() {
-    return crypto.randomUUID();
-}
-
-async function chatOnce(messages, sessionId, superMode) {
-    // Thinking mode: matikan biar cepat, kecuali Super Mode (boleh lebih dalam)
-    const payload = JSON.stringify({
-        messages,
-        model: CONFIG.model,
-        thinking: !!superMode,
-        session_id: sessionId
-    });
-
-    const response = await fetch(`https://${CONFIG.hostname}${CONFIG.path}`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'text/event-stream',
-            'X-WP-Nonce': CONFIG.wpNonce,
-            'Origin': CONFIG.origin,
-            'Referer': CONFIG.referer,
-            'User-Agent': CONFIG.userAgent
-        },
-        body: payload
-    });
-
-    if (!response.ok) {
-        throw new Error(`chat-deep.ai merespons status ${response.status}`);
-    }
-
-    const raw = await response.text();
-    return parseSSE(raw);
-}
-
-function parseSSE(raw) {
-    let fullContent = '';
-    let quotaRemaining = null;
-
-    const lines = raw.split('\n');
-    for (const line of lines) {
-        if (!line.startsWith('data: ')) continue;
-
-        const jsonStr = line.substring(6).trim();
-        if (!jsonStr || jsonStr === '[DONE]') continue;
-
-        try {
-            const parsed = JSON.parse(jsonStr);
-            const delta = parsed.choices?.[0]?.delta;
-            if (delta?.content) {
-                fullContent += delta.content;
-            }
-            if (parsed.quota !== undefined) {
-                quotaRemaining = parsed.quota;
-            }
-        } catch {
-            // skip baris yang gagal di-parse
-        }
-    }
-
-    return {
-        answer: fullContent.trim(),
-        quotaRemaining
-    };
 }
